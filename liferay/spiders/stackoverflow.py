@@ -1,7 +1,7 @@
 from scrapy.spiders import CrawlSpider
 from scrapy.selector import Selector
 from scrapy.http import Request
-import dateutil
+import dateutil.parser
 
 import re
 import json
@@ -17,15 +17,17 @@ class Stackoverflow(CrawlSpider):
 
     domain = 'http://stackoverflow.com/'
     list_type = 'json'
-    first_list_url = ('http://stackoverflow.com/search?tab=votes&pagesize=50'
+    first_list_url = ('http://stackoverflow.com/search?pagesize=50'
                       '&q=liferay')
-    page_url = ('http://stackoverflow.com/search?page=%s&tab=votes'
+    page_url = ('http://stackoverflow.com/search?page=%s'
                 '&q=liferay&pagesize=50')
     page_sum_xpath = '//div[@class="pager fl"]/a[5]/@href'
     list_items_xpath = '//div[@class="question-summary search-result"]'
     item_url_xpath = '//div[@class="result-link"]/span/a/@href'
-    item_date_xpath = ''
+    item_date_xpath = '//span[@class="relativetime"]/@title'
     item_title_xpath = '//div[@class="result-link"]/span/a/@title'
+    item_tags_xpath = '//a[@class="post-tag"]/text()'
+    content_xpath = '//div[@class="post-text"]'
 
     custom_settings = {
         'DOWNLOAD_DELAY': 3,
@@ -60,18 +62,27 @@ class Stackoverflow(CrawlSpider):
             if link:
                 question['url'] = link
                 if self.item_date_xpath:
-                    question['date'] = dateutil.parser.parse(
+                    question['publish_time'] = dateutil.parser.parse(
                         s.xpath(self.item_date_xpath).extract_first())
                 question['title'] = s.xpath(
                     self.item_title_xpath).extract_first().strip()
-                print(question)
-                # yield Request(link, meta={'article': article},
-                #               dont_filter=True, callback=self.parse_article)
+                question['tags'] = s.xpath(self.item_tags_xpath).extract()
+                # print(question)
+                yield Request(link, meta={'question': question},
+                              dont_filter=True, callback=self.parse_question)
 
     def get_page_sum(self, response):
-        return 2
+        # return 2
         selector = Selector(response)
         page_sum_url = selector.xpath(self.page_sum_xpath).extract_first()
         page_sum = ''.join(list(filter(str.isdigit, str(page_sum_url))))
         # print(page_sum)
         return int(page_sum)
+
+    def parse_question(self, response):
+        selector = Selector(response)
+        question = response.meta['question']
+        context = ''.join(selector.xpath(self.content_xpath).extract())
+        question['context'] = context
+        # print(question)
+        yield question

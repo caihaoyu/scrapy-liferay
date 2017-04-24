@@ -22,9 +22,10 @@ class Question(BaseItem):
     t_context = scrapy.Field()
     votes = scrapy.Field()
     closed = scrapy.Field()
-    answers = scrapy.Field()
+    answer_count = scrapy.Field()
     author = scrapy.Field()
     publish_time = scrapy.Field()
+    tags = scrapy.Field()
 
 
 class Answer(BaseItem):
