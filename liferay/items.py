@@ -41,7 +41,18 @@ class Answer(BaseItem):
 
 class Comment(BaseItem):
     _id = scrapy.Field()
-    tpye_ = scrapy.Field()
+    type = scrapy.Field()
     type_id = scrapy.Field()
     context = scrapy.Field()
     publish_time = scrapy.Field()
+    author = scrapy.Field()
+
+
+class Author(dict):
+
+    def __init__(self, name, url):
+        self['name'] = name
+        self['url'] = url
+
+    def __getattr__(self, attr):
+        return self[attr]
