@@ -8,7 +8,6 @@ from liferay.items import Question, Comment, Answer, Author
 class Stackoverflow(CrawlSpider):
     allowed_domains = ["stackoverflow.com"]
     name = 'liferay'
-
     domain = 'http://stackoverflow.com/'
     list_type = 'json'
     first_list_url = ('http://stackoverflow.com/search?pagesize=50'
@@ -27,7 +26,11 @@ class Stackoverflow(CrawlSpider):
     item_author_url_xpath = '//div[@class="user-details"]/a/@href'
     content_xpath = '//div[@class="post-text"]'
     question_id_xpath = '//div[@class="question"]/@data-questionid'
+    question_xpath = '//div[@class="question"]'
     list_comments_xpath = '//td[@class="comment-text"]'
+    list_answers_xpath = '//div[@class="answer"]'
+    answer_id_xpath = '//div[@class="answer"]/@data-answerid'
+    # answer_content_xpath = '//div'
     comment_context_xpath = '//span[@class="comment-copy"]/text()'
     comment_time_xpath = '//span[@class="relativetime-clean"]/text()'
     comment_id_xpath = '//a[@class="comment-link"]/@href'
@@ -42,9 +45,10 @@ class Stackoverflow(CrawlSpider):
     def get_author(self, selector, type_):
         xpath = self.author_xpath_dict.get(type_, None)
         if xpath:
-            name = selector.xpath(xpath % ('text()')).extract_first().strip()
+            name = ''.join(selector.xpath(xpath %
+                                          ('text()')).extract()).strip()
             url = (self.domain +
-                   selector.xpath(xpath % ('@href')).extract_first().strip())
+                   ''.join(selector.xpath(xpath % ('@href')).extract()).strip())
             return Author(name=name, url=url)
         else:
             return {}
@@ -93,11 +97,11 @@ class Stackoverflow(CrawlSpider):
                               dont_filter=True, callback=self.parse_question)
 
     def get_page_sum(self, response):
-        return 2
+        # return 2
         selector = Selector(response)
         page_sum_url = selector.xpath(self.page_sum_xpath).extract_first()
         page_sum = ''.join(list(filter(str.isdigit, str(page_sum_url))))
-        # print(page_sum)
+        print(page_sum)
         return int(page_sum)
 
     def parse_question(self, response):
@@ -109,19 +113,24 @@ class Stackoverflow(CrawlSpider):
         question['context'] = context
         # print(question)
         yield question
+        html = selector.xpath(self.question_xpath).extract_first()
+        # print(html)
         comments = self.parse_comment(
-            response=response, ctype='question', type_id=q_id)
+            html=html, ctype='question', type_id=q_id)
         for c in comments:
             yield c
+        for item in self.parse_anwser(response, q_id):
+            yield item['answer']
+            for comment in item['comments']:
+                yield comment
 
-    def parse_comment(self, response, ctype, type_id):
-        selector = Selector(response)
+    def parse_comment(self, html, ctype, type_id):
+        selector = Selector(text=html)
         items = selector.xpath(self.list_comments_xpath).extract()
         result = []
         for item in items:
             s = Selector(text=item)
-            comment = Comment(
-            c_id =
+            comment = Comment()
             comment['type'] = ctype
             comment['type_id'] = type_id
             comment['context'] = ''.join(
@@ -131,4 +140,27 @@ class Stackoverflow(CrawlSpider):
             comment['author'] = self.get_author(selector=s, type_='comment')
             # yield comment
             result.append(comment)
+        return result
+
+    def parse_anwser(self, response, qid):
+        selector = Selector(response)
+        items = selector.xpath(self.list_answers_xpath).extract()
+        result = []
+        # TODO: 有空优化
+        for item in items:
+            s = Selector(text=item)
+            answer = Answer()
+            answer['question_id'] = qid
+            answer['_id'] = s.xpath(
+                self.answer_id_xpath).extract_first().strip()
+            answer['context'] = ''.join(
+                s.xpath(self.comment_context_xpath).extract())
+            votes = ''.join(s.xpath(
+                self.item_votes_xpath).extract()) or 0
+            answer['votes'] = votes
+            answer['publish_time'] = dateutil.parser.parse(
+                s.xpath(self.item_date_xpath).extract_first())
+            comments = self.parse_comment(
+                html=item, ctype='answer', type_id=answer['_id'])
+            result.append({'answer': answer, 'comments': comments})
         return result
